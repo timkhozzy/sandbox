@@ -31,10 +31,9 @@ def single_player():
             Stone(j, i)
             Stone(Map_size_x - j - 1, i)
     # hero
-    hero = Hero(Map, (start[0] + MS_visible_x // 2 - 1, start[1] + MS_visible_y // 2 - 1), (2, 2), 101, 4, 10, 5, 20, HERO_ANIMATIONS)
+    hero = Hero(Map, (start[0] + MS_visible_x // 2 - 1, start[1] + MS_visible_y // 2 - 1), (2, 2), 101, 4, 10, 5, 100, HERO_ANIMATIONS)
     hero_pl = hero.img.get_rect(center=(sc.get_width() // 2, sc.get_height() // 2))
     # enemies
-    Unit(Map, (32, 31), (1, 1), 2, Unit_test_img, 0, 0, 0, 30, Unit_test_dead)
     # конец генерации
 
     # таймеры
@@ -77,14 +76,7 @@ def single_player():
                     hero_attacked = True
                 # отладка
                 elif event.key == pg.K_m:
-                    m = Unit(Map, (42, 42), (1, 1), 2, Unit_test_img, 0, 0, 0, 99, Unit_test_dead)
-                    AI_Knight(Map, (32, 32), 1, Unit_test_img, 3, 0, 1, 10, Unit_test_dead, [hero], FPS)
-                elif event.key == pg.K_n:
-                    cnt = 0
-                    for pos in bfs((33, 33), (41, 41), Map, [0, -11], 8):
-                        print(pos)
-                        cnt += 1
-                        Unit(Map, pos, (1, 1), 2, f1.render(str(cnt), 1, BLACK), 0, 0, 0, 1, Unit_test_dead)
+                    Unit_AI(Map, (32, 32), 1, Unit_test_img, 3, 0, 1, 10, Unit_test_dead, [hero], FPS)
                 elif event.key == pg.K_l:
                     Stone(hero.pos[0] - 1, hero.pos[1])
 

@@ -73,7 +73,7 @@ def bfs(start, finish, Map, movable_codes, dist):
     st = queue[0]
     cur_map[queue[0][0]][queue[0][1]] = [False, 1]
     fn = (finish[0] - lk[0], finish[1] - lk[1])
-    if cur_map[fn[0]][fn[1]] == inf or cur_map[st[0]][st[1]] == inf:
+    if cur_map[fn[0]][fn[1]] == inf:
         return [start]
     while len(queue) > 0 and cur_map[fn[0]][fn[1]]:
         now = queue.popleft()
@@ -82,7 +82,7 @@ def bfs(start, finish, Map, movable_codes, dist):
                 if len(cur_map) > now[0] + dx >= 0 and len(cur_map[0]) > now[1] + dy >= 0 and cur_map[now[0] + dx][now[1] + dy][0]:
                     cur_map[now[0] + dx][now[1] + dy] = [False, cur_map[now[0]][now[1]][1] + 1]
                     queue.append((now[0] + dx, now[1] + dy))
-    print('\n'.join(map(lambda m: ' '.join(map(lambda b: str(b[1]), m)), cur_map)))
+    # print('\n'.join(map(lambda m: ' '.join(map(lambda b: str(b[1]), m)), cur_map)))
     path = []
     now = fn
     cnt = 0
@@ -100,52 +100,52 @@ def bfs(start, finish, Map, movable_codes, dist):
             else:
                 continue
             break
-        if path[-1] == now:
+        if path[-1] == (now[0] + lk[0], now[1] + lk[1]):
             return [start]
     if cnt == 10 ** 6:
         return [start]
-    print(path)
     return path[::-1]
 
 
-def update_path(self, start, target_pl, moveable_codes, Map):
+def update_path(self, start, target_pl, movable_codes, Map):
+    if start == target_pl:
+        return [start]
     # поиск пути у компьютерных соеников
     x_w = -1 if target_pl[0] < start[0] else 1  # полуплоскость по x
     y_w = -1 if target_pl[1] < start[1] else 1  # по y
     lin_y = (lambda x: inf) if target_pl[0] == start[0] else lin2(target_pl, start)
-    lin_x = (lambda x: inf) if target_pl[1] == start[1] else lin2(target_pl[::-1], start[::-1])
+    lin_x = (lambda y: inf) if target_pl[1] == start[1] else lin2(target_pl[::-1], start[::-1])
     x, y = start
     dirr = [0, 0]
     if y - 0.5 <= lin_y(x + 0.5) <= y + 0.5:
-        # y side
+        # x side
         dirr[0] += x_w
     if x - 0.5 <= lin_x(y + 0.5) <= x + 0.5:
-        # x side
+        # y side
         dirr[1] += y_w
     next = (start[0] + dirr[0], start[1] + dirr[1])
 
-    if Map[next[0]][next[1]].code in moveable_codes:
+    if Map[next[0]][next[1]].code in movable_codes:
         return [next]
     else:
         now = next
         cnt = 0  # чтоб за грануцу карты не улетал
-        while Map[now[0]][now[1]].code not in moveable_codes and cnt < 1000:
+        while Map[now[0]][now[1]].code not in movable_codes and now != target_pl:
+            lin_y = (lambda x: inf) if target_pl[0] == now[0] else lin2(target_pl, now)
+            lin_x = (lambda y: inf) if target_pl[1] == now[1] else lin2(target_pl[::-1], now[::-1])
             x, y = now
             dirr = [0, 0]
             if y - 0.5 <= lin_y(x + 0.5) <= y + 0.5:
-                # y side
-                dirr[0] += x_w
-            if x - 0.5 <= lin_x(y + 0.5) <= x + 0.5:
                 # x side
-                dirr[1] += y_w
+                dirr[0] = x_w
+            if x - 0.5 <= lin_x(y + 0.5) <= x + 0.5:
+                # y side
+                dirr[1] = y_w
             now = (now[0] + dirr[0], now[1] + dirr[1])
             cnt += 1
-        if cnt == 1000:
-            self.die()
-            return [(1, 1), (2, 2)]
-        path = bfs(start, now, Map, moveable_codes, 2)
-        if path == [start]:
-            path = bfs(start, now, Map, moveable_codes, 6)
-        if path == [start]:
-            self.die()
+        d = 3
+        path = bfs(start, now, Map, movable_codes, d)
+        while path == [start] and d < 10:
+            d += 2
+            path = bfs(start, now, Map, movable_codes, d)
     return path

@@ -62,36 +62,29 @@ class Object:
         self.build()
 
 
-class Unit(Object):
-    def __init__(self, Map, pos, size, code, img, speed, damage, attack_speed, hp, dead_img):
-        Object.__init__(self, Map, pos, size, code, img)
+class Hero(Object):
+    def __init__(self, Map, pos, size, code, speed, damage, attack_speed, hp, animations):
+        self.prev_layer = [[None for i in range(size[1])] for j in range(size[0])]  # слой под героем
+        Object.__init__(self, Map, pos, size, code, animations['stay']['right'])
         self.speed = speed
         self.damage = damage
         self.hp = hp
-        self.dead_img = dead_img
+        self.max_hp = hp
         self.attack_speed = attack_speed
+        self.movable_codes = {0, self.code, -11}  # коды проходимых для героя объектов
+        self.unfriendly_codes = {1, 2}  # список кодов объектов, кторые герой может бить
+        self.animations = animations
+        self.cond = 'stay'
+        self.side = 'right'
+        self.animation_cnt = True
+        # список свободных мест вокруг героя
+        self.foe = dict.fromkeys([(dx, dy) for dx in [self.size[0], -1] for dy in range(self.size[1])])
+        print(self.foe)
 
     def attack(self, other):
         other.hp -= self.damage
         if other.hp <= 0:
             other.die()
-
-    def die(self):
-        # умирает и создёт на месте себя труп
-        self.clear()
-        Object(self.Map, self.pos, self.size, -11, self.dead_img)
-        self.cond = 'dead'
-
-class Hero(Unit):
-    def __init__(self, Map, pos, size, code, speed, damage, attack_speed, hp, animations):
-        self.prev_layer = [[None for i in range(size[1])] for j in range(size[0])]  # слой под героем
-        Unit.__init__(self, Map, pos, size, code, animations['stay']['right'], speed, damage, attack_speed, hp, animations['dead'])
-        self.moveable_codes = set([0, self.code])  # коды проходимых для героя объектов
-        self.unfriendly_codes = set([1, 2])  # список кодов объектов, кторые герой может бить
-        self.animations = animations
-        self.cond = 'stay'
-        self.side = 'right'
-        self.animation_cnt = True
 
     def clear(self):
         # очистить объект с карты
@@ -109,7 +102,7 @@ class Hero(Unit):
                 self.Map[self.pos[0] + i][self.pos[1] + j] = self
 
     def move(self, dirr):
-        if is_free(self.Map, (self.pos[0] + dirr[0], self.pos[1] + dirr[1]), self.size, self.moveable_codes):
+        if is_free(self.Map, (self.pos[0] + dirr[0], self.pos[1] + dirr[1]), self.size, self.movable_codes):
             self.set_place(self.pos[0] + dirr[0], self.pos[1] + dirr[1])
             self.run(dirr)
             return True
@@ -155,45 +148,95 @@ class Hero(Unit):
         for enemy in enemies:
             self.attack(enemy)
 
+    def die(self):
+        raise SystemExit  # TODO: hero.die
 
-class AI_Knight(Unit):
-    def __init__(self, Map, pos,code, img, speed, damage, attack_speed, hp, dead_img, targets, FPS):
-        Unit.__init__(self, Map, pos, (1, 1), code, img, speed, damage, attack_speed, hp, dead_img)
+
+class Unit_AI(Object):
+    def __init__(self, Map, pos, code, img, speed, damage, attack_speed, hp, dead_img, targets, FPS):
+        # ---------- параметры ----------
+        Object.__init__(self, Map, pos, (1, 1), code, img)
+        self.speed = speed
+        self.damage = damage
+        self.hp = hp
+        self.max_hp = hp
+        self.dead_img = dead_img
+        self.attack_speed = attack_speed
+        # ---------- вспомогательные переменные ----------
         self.prev_pos = self.pos  # переменная для опредления направления движения во время прорисовки
-        self.spetial_codes = [self.code]  # коды, при попадании на которые юниту позволено телепортироваться на соседние клетки
-        self.moveable_codes = set([0, 11] + self.spetial_codes)  # коды проходимых объектов
+        self.special_codes = []  # коды, при попадании на которые юниту позволено телепортироваться на соседние клетки
+        self.movable_codes = set([0, 11] + self.special_codes)  # коды проходимых объектов
         self.cond = 'inactive'
         self.FPS = FPS
-        self.cnt = {'attack': 0, 'run': 0}
+        self.cnt = {'attack': 0, 'run': 0, 'target': 0}
+        # ---------- переменные для движения ----------
+        # список свободных мест вокруг юнита
+        self.foe = dict.fromkeys([(dx, dy) for dx in [self.size[0], -1] for dy in range(self.size[1])])
         self.targets = targets[:]
-        self.target = targets[-1]
-        self.path = deque(update_path(self, self.pos, self.target.pos, self.moveable_codes, self.Map))
+        self.rel_target_pos = None
+        self.target = None
+        self.find_target()
+        self.path = deque(update_path(self, self.pos, self.target.pos, self.movable_codes, self.Map))
         if len(self.path) < 2:
-            self.path.extend(update_path(self, self.path[0], self.target.pos, self.moveable_codes, self.Map))
+            self.path.extend(update_path(self, self.path[0], self.target.pos, self.movable_codes, self.Map))
+
+    def attack(self, other):
+        other.hp -= self.damage
+        if other.hp <= 0:
+            other.die()
+
+    def die(self):
+        # умирает и создёт на месте себя труп
+        self.clear()
+        Object(self.Map, self.pos, self.size, -11, self.dead_img)
+        self.cond = 'dead'
+        if self.target is not None:
+            self.target.foe[self.rel_target_pos] = None
 
     def move(self, target_pl):
         self.prev_pos = self.pos
-        if self.Map[self.path[0][0]][self.path[0][1]].code not in self.moveable_codes:
-            self.path = deque(update_path(self, self.pos, target_pl, self.moveable_codes, self.Map))
-        if self.Map[self.path[0][0]][self.path[0][1]].code in self.spetial_codes:
+        if self.Map[self.path[0][0]][self.path[0][1]].code not in self.movable_codes:
+            self.path = deque(update_path(self, self.pos, target_pl, self.movable_codes, self.Map))
+        if self.Map[self.path[0][0]][self.path[0][1]].code in self.special_codes:
             r1 = [-1, 1]
             r2 = [-1, 1]
             rnd.shuffle(r1)
             rnd.shuffle(r2)
             for dx in r1 + [0]:
                 for dy in r2 + [0]:
-                    if self.Map[self.path[0][0] + dx][self.path[0][1] + dy] in self.moveable_codes:
+                    if self.Map[self.path[0][0] + dx][self.path[0][1] + dy] in self.movable_codes:
                         self.path.popleft()
                         self.path.appendleft((self.path[0][0] + dx, self.path[0][1] + dy))
         self.set_place(self.path[0][0], self.path[0][1])
         self.path.popleft()
         if len(self.path) == 0:
-            self.path.extend(update_path(self, self.pos, target_pl, self.moveable_codes, self.Map))
+            self.path.extend(update_path(self, self.pos, target_pl, self.movable_codes, self.Map))
         if len(self.path) == 1:
-            self.path.extend(update_path(self, self.path[0], target_pl, self.moveable_codes, self.Map))
+            self.path.extend(update_path(self, self.path[0], target_pl, self.movable_codes, self.Map))
 
     def find_target(self):
-        pass
+        # переопределить в производном классе
+        if self.target is not None and self.target is not self:
+            self.target.foe[self.rel_target_pos] = None
+        for target in self.targets:
+            for pos in target.foe.keys():
+                if target.foe[pos] is None:
+                    target.foe[pos] = self
+                    self.rel_target_pos = pos
+                    self.target = target
+                    self.cnt['target'] = self.FPS * self.speed * 4
+                    return
+        self.rel_target_pos = (rnd.randint(-1, 1), rnd.randint(-1, 1))
+        self.target = self
+        self.cnt['target'] = self.FPS * self.speed
+
+    def hit(self):
+        # переопределить в производном классе
+        for dx in [-1, 1]:
+            if self.Map[self.pos[0] + dx][self.pos[1]] in self.targets:
+                self.attack(self.Map[self.pos[0] + dx][self.pos[1]])
+                self.cnt['attack'] = self.FPS / self.attack_speed
+                return
 
     def update(self):
         for key in self.cnt.keys():
@@ -201,16 +244,13 @@ class AI_Knight(Unit):
         if self.cond == 'inactive':
             return
         if self.cnt['attack'] <= 0:
-            for dx in [-1, 1]:
-                if self.Map[self.pos[0] + dx][self.pos[1]].code in friendly_codes:
-                    self.attack(self.Map[self.pos[0] + dx][self.pos[1]])
-                    self.cnt['attack'] = self.FPS / self.attack_speed
-                    return
-        if self.cnt['run'] <= 0 and self.target is not None and dist(self.pos, self.target.pos) >= 2:
-            self.move(self.target.pos)
+            self.hit()
+        if self.target is None or self.target.cond == 'dead' or self.cnt['target'] <= 0:
+            self.find_target()
+        if self.cnt['run'] <= 0:
+            self.move((self.target.pos[0] + self.rel_target_pos[0], self.target.pos[1] + self.rel_target_pos[1]))
             self.cnt['run'] = self.FPS / self.speed
             self.cnt['attack'] = max(self.FPS / self.speed, self.cnt['attack'])
-
 
     def draw(self, surf, relative_pos, TILE_SIZE):
         # relative_pos - координаты левого верхего угла тайла, в который юнит движется (в пикселях от края экрана)
@@ -220,10 +260,6 @@ class AI_Knight(Unit):
                                  relative_pos[1] - (self.pos[1] - self.prev_pos[1]) * pix_dist))
         else:
             surf.blit(self.img, relative_pos)
-
-
-
-
 
 
 def calc_pix_pl(pos, LK_pos, LK_pix):
