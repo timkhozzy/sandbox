@@ -31,8 +31,9 @@ def single_player():
             Stone(j, i)
             Stone(Map_size_x - j - 1, i)
     # hero
-    hero = Hero(Map, (start[0] + MS_visible_x // 2 - 1, start[1] + MS_visible_y // 2 - 1), (2, 2), 101, 4, 10, 5, 100, HERO_ANIMATIONS)
+    hero = Hero(Map, (start[0] + MS_visible_x // 2 - 1, start[1] + MS_visible_y // 2 - 1), (2, 2), 101, 2, 10, 5, 100000, HERO_ANIMATIONS)
     hero_pl = hero.img.get_rect(center=(sc.get_width() // 2, sc.get_height() // 2))
+    friendly_list = [hero]
     # enemies
     # конец генерации
 
@@ -49,7 +50,7 @@ def single_player():
     while 1:
         FPS = clock.get_fps()
         pix_speed = (TILE_SIZE / (FPS if FPS != 0 else max_FPS)) * hero.speed
-        pg.display.set_caption(str(int(hero.hp)))
+        pg.display.set_caption(str(int(FPS)))
         for event in pg.event.get():
             if event.type == pg.QUIT:
                 exit()
@@ -74,9 +75,22 @@ def single_player():
                     hero.hit(dirr)
                     pg.time.set_timer(26, 1000 // hero.attack_speed)
                     hero_attacked = True
+                elif event.key == pg.K_u:
+                    for friend in friendly_list:
+                        if friend.code == 3:
+                            friend.set_condition('other')
                 # отладка
                 elif event.key == pg.K_m:
-                    Unit_AI(Map, (32, 32), 1, Unit_test_img, 3, 0, 1, 10, Unit_test_dead, [hero], FPS)
+                    FriendlyKnight(Map, (32, 32), {'stay': {'attack': Unit2_test_img, 'defence': Unit_test_img}, 'dead': Unit_test_dead},
+                                   {'hp': {'attack': 10, 'defence': 20},
+                                    'attack_speed': {'attack': 1, 'defence': 2},
+                                    'speed': {'attack': 2, 'defence': 2.5},
+                                    'damage': {'attack': 9, 'defence': 5}},
+                                   [], hero, max_FPS, friendly_list)  # TODO: balance characteristiсs (FriendlyKnight)
+                elif event.key == pg.K_n:
+                    UnfriendlyKnight(Map, (42, 42), {'stay': Unit1_test_img, 'dead': Unit1_test_dead},
+                                   {'hp': 10, 'attack_speed': 1, 'speed': 2.125, 'damage': 10},
+                                   [hero], max_FPS)
                 elif event.key == pg.K_l:
                     Stone(hero.pos[0] - 1, hero.pos[1])
 
@@ -130,9 +144,9 @@ def single_player():
             for dy in range(MS_visible_y):
                 sc.blit(Map[LK_pos[0] + dx][LK_pos[1] + dy].get_BasicTile(LK_pos[0] + dx, LK_pos[1] + dy).img,
                         (LKP_int[0] + dx * TILE_SIZE, LKP_int[1] + dy * TILE_SIZE))
-                if Map[LK_pos[0] + dx][LK_pos[1] + dy].code < 0 or Map[LK_pos[0] + dx][LK_pos[1] + dy].code == 2:
+                if Map[LK_pos[0] + dx][LK_pos[1] + dy].code < 0:
                     objects.add(Map[LK_pos[0] + dx][LK_pos[1] + dy])
-                elif Map[LK_pos[0] + dx][LK_pos[1] + dy].code in enemy_codes and \
+                elif Map[LK_pos[0] + dx][LK_pos[1] + dy].code > 1000 and \
                         Map[LK_pos[0] + dx][LK_pos[1] + dy] not in enemies:
                     Map[LK_pos[0] + dx][LK_pos[1] + dy].cond = 'active'
                     enemies.add(Map[LK_pos[0] + dx][LK_pos[1] + dy])
@@ -142,14 +156,21 @@ def single_player():
         # 3. ИИ и перемещение противников
         for enemy in list(enemies):
             if enemy.cond != 'dead':
+                enemy.update_targets(friendly_list)
                 enemy.update()
                 enemy.draw(sc, calc_pix_pl(enemy.pos, LK_pos, LKP_int), TILE_SIZE)
             else:
                 enemies.remove(enemy)
-        # 4. Анимация героя
-        if hero.hp <= 0:
-            return
-        hero.draw(sc, hero_pl)
+        # 5. Анимация героя и лрузей
+        for friend in friendly_list[::-1]:
+            if friend is hero:
+                hero.draw(sc, hero_pl)
+            elif friend.cond != 'dead':
+                friend.update_targets(enemies)
+                friend.update()
+                friend.draw(sc, calc_pix_pl(friend.pos, LK_pos, LKP_int), TILE_SIZE)
+            else:
+                friendly_list.remove(friend)
         pg.display.update()
         clock.tick(max_FPS)
 
@@ -166,18 +187,26 @@ GRASS_IMG2 = pg.transform.scale(pg.image.load(r'C:\Users\Тимофей\PycharmP
 GRASS_IMG3 = pg.transform.scale(pg.image.load(r'C:\Users\Тимофей\PycharmProjects\Sandbox\kolia_test\grass_3.png'), (TILE_SIZE, TILE_SIZE)).convert()
 GRASS_IMG = [GRASS_IMG1, GRASS_IMG2, GRASS_IMG3]
 ROCK_IMG = pg.transform.scale(pg.image.load(r'C:\Users\Тимофей\PycharmProjects\Sandbox\kolia_test\stone.png'), (TILE_SIZE, TILE_SIZE)).convert()
-HERO_IMG_R = pg.transform.scale(pg.image.load('hero_test.png'), (TILE_SIZE * 2, TILE_SIZE * 2))  # TODO: выбор типа
+# HERO_IMG_R = pg.transform.scale(pg.image.load('hero_test.png'), (TILE_SIZE * 2, TILE_SIZE * 2))  # TODO: выбор типа
+HERO_IMG_R = pg.transform.scale(pg.image.load(r'C:\Users\Тимофей\PycharmProjects\Sandbox\kolia_test\hero_stay.png'), (TILE_SIZE * 2, TILE_SIZE * 2)).convert_alpha()
 HERO_IMG_L = pg.transform.flip(HERO_IMG_R, 1, 0)
-HERO_RUN_R = pg.transform.scale(pg.image.load('hero_run_test.png'), (TILE_SIZE * 2, TILE_SIZE * 2))
+# HERO_RUN_R = pg.transform.scale(pg.image.load('hero_run_test.png'), (TILE_SIZE * 2, TILE_SIZE * 2))
+HERO_RUN_R = pg.transform.scale(pg.image.load(r'C:\Users\Тимофей\PycharmProjects\Sandbox\kolia_test\hero_run2.png'), (TILE_SIZE * 2, TILE_SIZE * 2)).convert_alpha()
 HERO_RUN_L = pg.transform.flip(HERO_RUN_R, 1, 0)
-HERO_ATTACK_R = pg.transform.scale(pg.image.load('hero_attack_test.png'), (TILE_SIZE * 2, TILE_SIZE * 2))
+# HERO_ATTACK_R = pg.transform.scale(pg.image.load('hero_attack_test.png'), (TILE_SIZE * 2, TILE_SIZE * 2))
+HERO_ATTACK_R = pg.transform.scale(pg.image.load(r'C:\Users\Тимофей\PycharmProjects\Sandbox\kolia_test\hero_attack.png'), (TILE_SIZE * 2, TILE_SIZE * 2)).convert_alpha()
 HERO_ATTACK_L = pg.transform.flip(HERO_ATTACK_R, 1, 0)
 HERO_ANIMATIONS = {'run': {'left': HERO_RUN_L, 'right': HERO_RUN_R},
                    'stay': {'left': HERO_IMG_L, 'right': HERO_IMG_R},
                    'dead': HERO_IMG_R,
                    'attack': {'left': HERO_ATTACK_L, 'right': HERO_ATTACK_R}}  # TODO: hero img
-Unit_test_img = pg.transform.scale(pg.image.load('unit_test.png'), (TILE_SIZE, TILE_SIZE))
-Unit_test_dead = pg.transform.scale(pg.image.load('unit_dead_test.png'), (TILE_SIZE, TILE_SIZE))
+Unit_test_img = pg.transform.scale(pg.image.load(r'C:\Users\Тимофей\PycharmProjects\Sandbox\kolia_test\warrior_pease.png'), (TILE_SIZE, TILE_SIZE)).convert_alpha()
+Unit_test_dead = pg.transform.scale(pg.image.load(r'C:\Users\Тимофей\PycharmProjects\Sandbox\kolia_test\warrior_dead.png'), (TILE_SIZE, TILE_SIZE)).convert_alpha()
+# TODO: unitIMG
+Unit1_test_img = pg.transform.scale(pg.image.load(r'C:\Users\Тимофей\PycharmProjects\Sandbox\kolia_test\soldier_peace.png'), (TILE_SIZE, TILE_SIZE)).convert_alpha()
+Unit1_test_dead = pg.transform.scale(pg.image.load(r'C:\Users\Тимофей\PycharmProjects\Sandbox\kolia_test\soldier_dead.png'), (TILE_SIZE, TILE_SIZE)).convert_alpha()
+Unit2_test_img = pg.transform.scale(pg.image.load(r'C:\Users\Тимофей\PycharmProjects\Sandbox\kolia_test\warrior_attack.png'), (TILE_SIZE, TILE_SIZE)).convert_alpha()
+
 
 
 single_player()

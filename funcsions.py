@@ -149,3 +149,13 @@ def update_path(self, start, target_pl, movable_codes, Map):
             d += 2
             path = bfs(start, now, Map, movable_codes, d)
     return path
+
+
+def load_img(path, size):
+    res = []
+    i = 1
+    while 1:
+        try:
+            res.append(pg.transform.scale(pg.image.load(path + str(i) + '.png'), (size, size)).convert_alpha())
+        except pg.error:
+            return res
