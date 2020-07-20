@@ -1,15 +1,58 @@
-from math import inf
+from math import inf, atan, degrees
 from collections import deque
+import pygame as pg
+pg.init()
 
+
+# работа с прямыми
+class Polynomial:
+    def __init__(self, a, b, c):
+        # a*x + b*y + c = 0
+        self.a = a
+        self.b = b
+        self.c = c
+
+    def from_x(self, x):
+        if self.b == 0:
+            return inf
+        return (self.a * x + self.c) / -self.b
+
+    def from_y(self, y):
+        if self.b == 0:
+            return inf
+        return (self.b * y + self.c) / -self.a
+
+    def par_x(self, s):
+        if self.b == 0:
+            return {'k': inf, 'b': inf}[s]
+        return {'k': self.a / self.b, 'b': self.c / self.b}[s]
+
+    def par_y(self, s):
+        if self.a == 0:
+            return {'k': inf, 'b': inf}[s]
+        return {'k': self.b / self.a, 'b': self.c / self.a}[s]
+
+
+def line_from_points(coords1, coords2):
+    x1, y1 = coords1
+    x2, y2 = coords2
+    if x1 == x2:
+        return Polynomial(1, 0, -x1)
+    elif y1 == y2:
+        return Polynomial(0, 1, -y1)
+    return Polynomial(1 / (x2 - x1), 1 / (y1 - y2), y1 / (y2 - y1) + x1 / (x1 - x2))
+
+
+def intersect_lines(lin1, lin2):
+    d = lin1.a * lin2.b - lin2.a * lin1.b
+    dx = lin2.c * lin1.a - lin1.c * lin2.a
+    dy = lin2.c * lin1.b - lin2.b * lin1.c
+    if d == 0:
+        return inf, inf
+    else:
+        return dy / d, -dx / d
 
 # объявление сторонних функций
-def lin2(d1, d2):
-    # прямая, проходящая через 2 заданные точки
-    x1, y1 = d1
-    x2, y2 = d2
-    return lambda x: ((y1 - y2) * x + x1 * y2 - x2 * y1) / (x1 - x2)
-
-
 def arrow(st, fn):
     # переделывает прямую в "змейку" от st до fn
     x, y = st
@@ -156,6 +199,16 @@ def load_img(path, size):
     i = 1
     while 1:
         try:
-            res.append(pg.transform.scale(pg.image.load(path + str(i) + '.png'), (size, size)).convert_alpha())
+            res.append(pg.transform.scale(pg.image.load(path + str(i) + '.png'), size).convert_alpha())
+            i += 1
         except pg.error:
             return res
+
+
+def load_sprite(path, size):
+    res = {'attack': [], 'run': [], 'stay': []}
+    for cond in ['attack', 'run', 'stay']:
+        for img in load_img(path + '\\' + cond, size):
+            res[cond].append({'left': pg.transform.flip(img, 1, 0), 'right': img})
+    res['dead'] = pg.transform.scale(pg.image.load(path + '\\dead.png'), size).convert_alpha()
+    return res

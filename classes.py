@@ -1,6 +1,6 @@
 from funcsions import *
 import pygame as pg
-import  random as rnd
+import random as rnd
 pg.init()
 
 
@@ -10,8 +10,14 @@ MS_visible_x, MS_visible_y = 42, 22
 TILE_SIZE = 32
 WHITE = (255, 255, 255)
 BLACK = (1, 1, 1)
-friendly_codes = [101]
+loot_codes = [5]
+ANIMATION_SPEED = 0.2
 # конец констант
+
+
+def set_ArrowImg(path=r'C:\Users\Тимофей\PycharmProjects\Sandbox\images\arrow.png'):
+    global ArrowImg
+    ArrowImg = pg.transform.scale(pg.image.load(path), (TILE_SIZE, TILE_SIZE)).convert_alpha()
 
 
 class BasicTile:
@@ -140,24 +146,28 @@ class Hero(Object):
 
 
 class Unit_AI(Object):
-    def __init__(self, Map, pos, code, img, speed, damage, attack_speed, hp, dead_img, targets, FPS):
+    def __init__(self, Map, pos, code, imgs, speed, damage, attack_speed, hp, targets, FPS):
         # ---------- параметры ----------
-        Object.__init__(self, Map, pos, (1, 1), code, img)
+        Object.__init__(self, Map, pos, (1, 1), code, imgs)
         self.speed = speed
         self.damage = damage
         self.hp = hp
         self.max_hp = hp
-        self.dead_img = dead_img
         self.attack_speed = attack_speed
         # ---------- вспомогательные переменные ----------
         self.prev_pos = self.pos  # переменная для опредления направления движения во время прорисовки
-        self.special_codes = []  # коды, при попадании на которые юниту позволено телепортироваться на соседние клетки
-        self.movable_codes = set([0, -11] + self.special_codes)  # коды проходимых объектов
+        self.movable_codes = {0, -11}  # коды проходимых объектов
         self.cond = 'inactive'
         self.FPS = FPS
-        self.cnt = {'attack': 0, 'run': 0, 'target': 0}
+        self.cnt = {'attack': inf if self.attack_speed == 0 else 0,
+                    'run': inf if self.speed == 0 else 0,
+                    'target': 0,
+                    'attack_animation': -1,
+                    'stay': self.FPS * ANIMATION_SPEED * len(self.img['stay']) - 1}
+        self.side = 'right'
+        self.stay_cnt = 0
         # ---------- переменные для движения ----------
-        # список свободных мест вокруг юнита
+        # список заятых мест вокруг юнита
         self.foe = set()
         self.targets = targets[:]
         self.rel_target_pos = None
@@ -175,7 +185,7 @@ class Unit_AI(Object):
     def die(self):
         # умирает и создёт на месте себя труп
         self.clear()
-        Object(self.Map, self.pos, self.size, -11, self.dead_img)
+        Object(self.Map, self.pos, self.size, -11, self.img['dead'])
         self.cond = 'dead'
         if self.target is not None and self.target is not self:
             self.target.foe.remove(self.rel_target_pos)
@@ -187,16 +197,6 @@ class Unit_AI(Object):
         self.prev_pos = self.pos
         if self.Map[self.path[0][0]][self.path[0][1]].code not in self.movable_codes:
             self.path = deque(update_path(self, self.pos, target_pl, self.movable_codes, self.Map))
-        if self.Map[self.path[0][0]][self.path[0][1]].code in self.special_codes:
-            r1 = [-1, 1]
-            r2 = [-1, 1]
-            rnd.shuffle(r1)
-            rnd.shuffle(r2)
-            for dx in r1 + [0]:
-                for dy in r2 + [0]:
-                    if self.Map[self.path[0][0] + dx][self.path[0][1] + dy] in self.movable_codes:
-                        self.path.popleft()
-                        self.path.appendleft((self.path[0][0] + dx, self.path[0][1] + dy))
         self.set_place(self.path[0][0], self.path[0][1])
         self.path.popleft()
         if len(self.path) == 0:
@@ -215,7 +215,6 @@ class Unit_AI(Object):
                     self.rel_target_pos = pos
                     self.target = target
                     self.cnt['target'] = self.FPS * self.speed * 4
-                    return
         self.rel_target_pos = (rnd.randint(-1, 1), rnd.randint(-1, 1))
         self.target = self
         self.cnt['target'] = self.FPS * self.speed
@@ -225,8 +224,12 @@ class Unit_AI(Object):
         for dx in [-1, 1]:
             if self.Map[self.pos[0] + dx][self.pos[1]] in self.targets:
                 self.attack(self.Map[self.pos[0] + dx][self.pos[1]])
-                self.cnt['attack'] = self.FPS / self.attack_speed
-                return
+                if dx == -1:
+                    self.side = 'left'
+                else:
+                    self.side = 'right'
+                return True
+        return False
 
     def update(self):
         for key in self.cnt.keys():
@@ -234,32 +237,39 @@ class Unit_AI(Object):
         if self.cond == 'inactive':
             return
         if self.cnt['attack'] <= 0:
-            self.hit()
+            if self.hit():
+                self.cnt['attack'] = max(self.FPS / self.attack_speed, self.cnt['attack'])
+                self.cnt['attack_animation'] = int(self.FPS * ANIMATION_SPEED * len(self.img['attack']) * 2) - 1
         if self.target is None or self.target.cond == 'dead' or self.cnt['target'] <= 0:
             self.find_target()
         if self.cnt['run'] <= 0:
             self.move((self.target.pos[0] + self.rel_target_pos[0], self.target.pos[1] + self.rel_target_pos[1]))
-            self.cnt['run'] = self.FPS / self.speed
-            self.cnt['attack'] = max(self.FPS / self.speed, self.cnt['attack'])
+            self.cnt['run'] = self.FPS / self.speed - 1
+            self.cnt['attack'] = max(self.FPS / self.speed - 1, self.cnt['attack'])
+        if self.cnt['stay'] <= 0:
+            self.cnt['stay'] = self.FPS * ANIMATION_SPEED * len(self.img['stay']) - 1
 
     def draw(self, surf, relative_pos, TILE_SIZE):
         # relative_pos - координаты левого верхего угла тайла, в который юнит движется (в пикселях от края экрана)
-        if self.cnt['run'] >= 0:
-            pix_dist = int((TILE_SIZE / self.FPS) * self.speed * self.cnt['run'])
-            surf.blit(self.img, (relative_pos[0] - (self.pos[0] - self.prev_pos[0]) * pix_dist,
-                                 relative_pos[1] - (self.pos[1] - self.prev_pos[1]) * pix_dist))
+        if self.cnt['attack_animation'] > 0:
+            img = self.img['attack'][len(self.img['attack']) - self.cnt['attack_animation'] // int(self.FPS * ANIMATION_SPEED * 2) - 1]
+        elif self.pos == self.prev_pos:
+            img = self.img['stay'][len(self.img['stay']) - int(self.cnt['stay']) // int(self.FPS * ANIMATION_SPEED) - 1]
         else:
-            surf.blit(self.img, relative_pos)
+            img = self.img['run'][len(self.img['run']) - int(self.cnt['run']) // int(self.FPS / self.speed / len(self.img['run'])) - 1]
+            self.side = 'right' if self.pos[0] > self.prev_pos[0] else 'left'
+        pix_dist = int((TILE_SIZE / self.FPS) * self.speed * self.cnt['run'])
+        surf.blit(img[self.side], (relative_pos[0] - (self.pos[0] - self.prev_pos[0]) * pix_dist,
+                        relative_pos[1] - (self.pos[1] - self.prev_pos[1]) * pix_dist))
 
 
 class FriendlyKnight(Unit_AI):
-    def __init__(self, Map, pos, img, ch, targets, hero, FPS, friendly_list):
+    def __init__(self, Map, pos, ch, targets, hero, FPS, friendly_list):
         friendly_list.append(self)
         self.hero = hero
         self.movable_codes = {3, 0, -11}
         self.ch = ch
-        self.ch['img'] = img['stay']
-        Unit_AI.__init__(self, Map, pos, 3, 1, 1, 1, 1, ch['hp']['attack'], img['dead'], targets, FPS)
+        Unit_AI.__init__(self, Map, pos, 3, ch['img']['attack'], 1, 1, 1, ch['hp']['attack'], targets, FPS)
         self.set_condition('attack')
 
     def set_condition(self, condition):
@@ -307,7 +317,7 @@ class FriendlyKnight(Unit_AI):
 
 class UnfriendlyKnight(Unit_AI):
     def __init__(self, Map, pos, img, ch, targets, FPS):
-        Unit_AI.__init__(self, Map, pos, 1004, img['stay'], ch['speed'], ch['damage'], ch['attack_speed'], ch['hp'], img['dead'], targets, FPS)
+        Unit_AI.__init__(self, Map, pos, 1004, img, ch['speed'], ch['damage'], ch['attack_speed'], ch['hp'], targets, FPS)
 
     def find_target(self):
         if self.target is not None and self.target is not self:
@@ -324,6 +334,68 @@ class UnfriendlyKnight(Unit_AI):
                         self.cnt['target'] = self.FPS / self.speed * 3
                         return
             d += 1
+
+    def draw(self, surf, relative_pos, TILE_SIZE):
+        # relative_pos - координаты левого верхего угла тайла, в который юнит движется (в пикселях от края экрана)
+        if self.pos == self.prev_pos:
+            img = self.img['stay'][len(self.img['stay']) - int(self.cnt['stay']) // int(self.FPS * ANIMATION_SPEED) - 1]
+        else:
+            img = self.img['run'][
+                len(self.img['run']) - int(self.cnt['run']) // int(self.FPS / self.speed / len(self.img['run'])) - 1]
+            self.side = 'right' if self.pos[0] > self.prev_pos[0] else 'left'
+        pix_dist = int((TILE_SIZE / self.FPS) * self.speed * self.cnt['run'])
+        surf.blit(img[self.side], (relative_pos[0] - (self.pos[0] - self.prev_pos[0]) * pix_dist,
+                        relative_pos[1] - (self.pos[1] - self.prev_pos[1]) * pix_dist))
+
+
+class Arrow(Unit_AI):
+    def __init__(self, Map, pos, target_pos, damage, FPS):
+        self.x_w = -1 if target_pos[0] < pos[0] else 1  # полуплоскость по x
+        self.y_w = -1 if target_pos[1] < pos[1] else 1  # по y
+        self.line = line_from_points(target_pos, pos)
+        deg = degrees(atan(self.line.par_x('k'))) if self.x_w == 1 else degrees(atan(self.line.par_x('k'))) - 180
+        img = pg.transform.rotate(ArrowImg, deg)
+        Unit_AI.__init__(self, Map, pos, 5, {'stay': [img], 'run': [img]}, 5, damage, 0, inf, [], FPS)
+        self.cond = 'arrow'
+        self.movable_codes = {-11, 0}  # TODO: movable codes
+
+    def move(self, target_pl):
+        self.prev_pos = self.pos
+        x, y = self.pos
+        dirr = [0, 0]
+        if y - 0.5 <= intersect_lines(self.line, Polynomial(1, 0, -(x + self.x_w / 2)))[1] <= y + 0.5:
+            dirr[0] += self.x_w
+        if x - 0.5 <= intersect_lines(self.line, Polynomial(0, 1, -(y + self.y_w / 2)))[0] <= x + 0.5:
+            dirr[1] += self.y_w
+        next = (self.pos[0] + dirr[0], self.pos[1] + dirr[1])
+        if self.Map[next[0]][next[1]].code in self.movable_codes:
+            self.set_place(next[0], next[1])
+        else:
+            try:
+                self.attack(self.Map[next[0]][next[1]])
+            except:
+                self.die()
+
+    def attack(self, other):
+        other.hp -= self.damage
+        if other.hp <= 0:
+            other.die()
+        self.die()
+
+    def die(self):
+        self.clear()
+        self.cond = 'dead'
+        self.hp = 0
+
+    def find_target(self):
+        self.target = self
+        self.rel_target_pos = (0, 0)
+
+    def draw(self, surf, relative_pos, TILE_SIZE):
+        pix_dist = int((TILE_SIZE / self.FPS) * self.speed * self.cnt['run'])
+        surf.blit(self.img['stay'][0], (relative_pos[0] - (self.pos[0] - self.prev_pos[0]) * pix_dist,
+                                   relative_pos[1] - (self.pos[1] - self.prev_pos[1]) * pix_dist))
+
 
 
 def calc_pix_pl(pos, LK_pos, LK_pix):
